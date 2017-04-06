@@ -754,6 +754,8 @@ int main(int argc, char **argv)
     int iter = DEFAULT_ITERATIONS;
     int64_t lba = 0;
     int duration = -1;
+    
+    printf("This is a test for GIT");
 
     if (argc < 3) {
         usage();
@@ -828,6 +830,8 @@ int main(int argc, char **argv)
 		}
     }
 
+	  printf("This is a test for GIT");
+
     fd = open_dev(dev_path, verbose);
     if (fd < 0) {
         fprintf(stderr, "Can not open device: %s\n", dev_path);
@@ -896,6 +900,7 @@ int main(int argc, char **argv)
 	}
 
     close_log();
+printf("This is a test for GIT");
 
     return 0;
 }
