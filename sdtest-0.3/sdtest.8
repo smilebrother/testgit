@@ -1,0 +1,102 @@
+.\" sdtest.8
+.\"
+.\" Author: Xiang-Yu Wang <rain_wang@jabil.com>
+.\"
+.\" Copyright (c) 2008 Jabil, Inc.
+.\"
+.\" This code is free software; you can redistribute it and/or modify
+.\" it under the terms of the GNU General Public License version 2 as
+.\" published by the Free Software Foundation.
+.\"
+.\"
+.TH "sdtest" 8 "April 2008" "Version 0.3-pre3"
+.SH NAME
+sdtest \- Scsi Disk Test program
+.SH SYNOPSIS
+.B sdtest
+[arguments]
+.TP
+.B sdtest
+[-d device] [-t test] [-p pass] [-r thread] [-b block] [-g blocks] [-s size] [-f start] [-o end] [-c coverage] [-w pattern] [-k] [-u] [-n] [-q quiet] [-i] [-v] [-h]
+.SH DESCRIPTION
+the Scsi Disk Test program test scsi disk device by reading/writing the disk through standard file I/O or by issuing SCSI commands using Linux's sgio interface.
+It can also stress the disk device by running a number of threads concurrently to do the test.
+.SH OPTIONS
+.TP
+.BI "\-d --device " device
+Device to test, eg. /dev/sda /dev/hda /dev/sdc1 /dev/sg2. Note: if the device was set to a disk partition such as /dev/sda1, the partition information would be ignored and the device accessed directly when using sgio interface (-u option was set) to test the disk.
+.TP
+.BI "\-t --test " test
+Test to test, the mnemonic name should be one of sread (Sequential Read), rread (Random Read), bread (Butterfly Read), swrite (Sequential Write), rwrite (Random Write), bwrite (Butterfly Write), swrc (Sequential Write/Read/Compare), rwrc (Random Write/Read/Compare), bwrc (Butterfly Write/Read/Compare), bseek (Butterfly Seek), interf (Interface test), selfd (Self Diagnostic test).
+.TP
+.BI "\-p --pass " pass
+Passes to repeat the test, value range 0-n.
+.TP
+.BI "\-r --thread " thread
+Run a number of threads concurrently in test, value range 0-16.
+.TP
+.BI "\-b --block " block
+Byte size of every block, e.g. 512 for physical device. Note: when using the sgio interface (-u option was set), the size of block should be exactly the physical device sector size, e.g. 512.
+.TP
+.BI "\-g --blocks " blocks
+Group of blocks of every transfer, e.g. 64b, 128b, 1024, 1k.
+.TP
+.BI "\-s --size " size
+Size in byte or block of the test, value range 0 - n or nb or nB or nk or nK or nm or nM or ng or nG, default size be the full size of disk.
+.TP
+.BI "\-f --start " start
+From which byte or block offset to test, value range 0 - n bytes or nb or nk or nK or nm or nM or ng or nG, default value is 0.
+.TP
+.BI "\-o --end " end
+On which byte or block offset to end, value range 0 - n bytes or nb or nk or nK or nm or nM or ng or nG, default value is end of the device.
+.TP
+block, size, start, end may all be followed by the following multiplicative suffixes: c(C) for 1, b for block, B for 512, K for 1000, k for 1024, M for 1000000, m for 1048576, G for 1000000000, g for 1073741824.
+.TP
+.\"Note: some combinations of options would be exclusive with each other.
+.TP
+.BI "\-c --coverage " coverage
+Coverage of whole disk in test, value range 0-100.
+.TP
+.BI "\-w --pattern " pattern
+Write pattern on writing test, which is a 32bit unsigned long value 0xXXXXXXXX, and the default value is 0x5a5a5a5a.
+.TP
+.BI "\-k --backup "
+Keep in backup test mode for preserving data on disk.
+.TP
+.BI "\-u --sgio "
+Use sgio interface to access device.
+.TP
+.BI "\-n --direct "
+Non asynchronous direct I/O method.
+.TP
+.BI "\-q --quiet " quiet
+Quiet run without percentage or stats, default is 0, set 1 to disable showing process percentage, set 2 to disable both percentage and stats.
+.TP
+.BI "\-i --info "
+Information of the device.
+.TP
+.BI "\-v --version "
+Version information.
+.TP
+.BI "\-h --help "
+Help message.
+.SH WARNING
+It's DANGEROUS to use the program to test a device containing an existing file system, that will erase your data on the disk!
+.SH FILES
+.I /usr/local/bin/sdtest
+.br
+.I /usr/local/bin/process
+.br
+.\".I /etc/local/bin/sdtest.sh
+.SH BUGS
+known bugs if any
+.SH AUTHOR
+Xiang-Yu Wang <rain_wang@jabil.com>
+.SH COPYRIGHT
+Copyright (c) 2008 Jabil, Inc.
+.PP
+This code is free software; you can redistribute it and/or modify 
+it under the terms of the GNU General Public License version 2 as 
+published by the Free Software Foundation.
+.SH "SEE ALSO"
+.B process(8), badblocks(8), sg_dd(8)

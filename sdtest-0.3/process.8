@@ -1,0 +1,48 @@
+.TH "process" 8 "March 2008" "Version 0.2"
+.SH NAME
+process \- process of Scsi Disk Test program
+.SH SYNOPSIS
+.B process
+[-d device] [-t test] [-r thread] [-s] [-p] [-o optstring]
+.SH DESCRIPTION
+the process of Scsi Disk Test program call sdtest to test scsi disk device by reading/writing the disk through issuing SCSI commands using Linux's sgio interface.
+It can also stress the disk device by running a number of threads concurrently to do the test.
+.SH OPTIONS
+.TP
+.BI "\-d " device
+Device to test, eg. /dev/sda /dev/hda. Note: the partition information would be ignored and the device accessed directly.
+.TP
+.BI "\-t " test
+Test to test, the mnemonic name should be one of sread (Sequential Read), rread (Random Read), bread (Butterfly Read), swrite (Sequential Write), rwrite (Random Write), bwrite (Butterfly Write), swrc (Sequential Write/Read/Compare), rwrc (Random Write/Read/Compare), bwrc (Butterfly Write/Read/Compare), bseek (Butterfly Seek), interf (Interface test, Note: this test would be tested first by default and be mandatory), selfd (Self Diagnostic test). Or be a string containing a combination of tests joined by character '+', e.g. 'sread+rread+bwrite' to test Sequential Read then Random Read then Butterfly Write. By default all tests would be tested sequentially.
+.TP
+.BI "\-r " thread
+Run a number of threads concurrently in test, value range 0-16.
+.TP
+.BI "\-s "
+Sanity, when this option is set, the test process will quit on error.
+.TP
+.BI "\-p "
+Partition the test size by threads number when this option is set.
+.TP
+.BI "\-o " optstring
+Option string to pass to the calling sdtest program, e.g. -o "-s 5g" for passing option string '-s 5g' to sdtest.
+.SH WARNING
+It's DANGEROUS to use the program to test a device containing an existing file system, that will erase your data on the disk!
+.SH FILES
+.I /usr/local/bin/sdtest
+.br
+.I /usr/local/bin/process
+.br
+.\".I /etc/local/bin/sdtest.sh
+.SH BUGS
+known bugs if any
+.SH AUTHOR
+Xiang-Yu Wang <rain_wang@jabil.com>
+.SH COPYRIGHT
+Copyright (c) 2008 Jabil, Inc.
+.PP
+This code is free software; you can redistribute it and/or modify 
+it under the terms of the GNU General Public License version 2 as 
+published by the Free Software Foundation.
+.SH "SEE ALSO"
+.B sdtest(8)

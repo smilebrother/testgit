@@ -1,0 +1,27 @@
+Scsi Disk Test Version 0.3-pre3 (c) 2008 Jabil, Inc.
+
+Usage: sdtest [arguments]
+
+Arguments:
+  -d, --device    (D)evice to test, e.g. /dev/sda /dev/hda.
+  -t, --test      (T)est to test, e.g. swrc rwrc sread rread.
+  -p, --pass      (P)asses to repeat the test, value range 0-n.
+  -r, --thread    (R)un a number of threads concurrently in test.
+  -b, --block     (B)yte size of every block, e.g. 512 for physical device.
+  -g, --blocks    (G)roup of blocks of every transfer, e.g. 64 128 1024 1k.
+  -s, --size      (S)ize in byte or block of the test, e.g. n nK nM or full.
+  -f, --start     (F)rom which byte or block offset to test, e.g. n nK nM nG.
+  -o, --end       (O)n which byte or block offset to end, e.g. n nK nM nG.
+  -c, --coverage  (C)overage of whole disk in test, value range 0-100.
+  -w, --pattern   (W)rite pattern on writing test, e.g. 0x5a5a5a5a.
+  -k, --backup    (K)eep in backup test mode for preserving data.
+  -u, --sgio      (U)se sgio interface to access device.
+  -n, --direct    (N)on asynchronous direct I/O method.
+  -q, --quiet     (Q)uiet run without percentage or stats.
+  -i, --info      (I)nformation of the device.
+  -v, --version   (V)ersion information.
+  -h, --help      (H)elp message.
+
+Process of Scsi Disk Test
+
+usage: process [-d device] [-t test] [-r thread] [-s] [-p] [-o optstring]

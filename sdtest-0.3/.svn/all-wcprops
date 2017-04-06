@@ -1,0 +1,125 @@
+K 25
+svn:wc:ra_dav:version-url
+V 51
+/svn/sw/rms220/!svn/ver/267/trunk/sdtest/sdtest-0.3
+END
+al_par.c
+K 25
+svn:wc:ra_dav:version-url
+V 60
+/svn/sw/rms220/!svn/ver/267/trunk/sdtest/sdtest-0.3/al_par.c
+END
+io_sg.c
+K 25
+svn:wc:ra_dav:version-url
+V 59
+/svn/sw/rms220/!svn/ver/267/trunk/sdtest/sdtest-0.3/io_sg.c
+END
+utils.c
+K 25
+svn:wc:ra_dav:version-url
+V 59
+/svn/sw/rms220/!svn/ver/267/trunk/sdtest/sdtest-0.3/utils.c
+END
+loads.c
+K 25
+svn:wc:ra_dav:version-url
+V 59
+/svn/sw/rms220/!svn/ver/267/trunk/sdtest/sdtest-0.3/loads.c
+END
+process.8
+K 25
+svn:wc:ra_dav:version-url
+V 61
+/svn/sw/rms220/!svn/ver/267/trunk/sdtest/sdtest-0.3/process.8
+END
+utils.h
+K 25
+svn:wc:ra_dav:version-url
+V 59
+/svn/sw/rms220/!svn/ver/267/trunk/sdtest/sdtest-0.3/utils.h
+END
+Changelog
+K 25
+svn:wc:ra_dav:version-url
+V 61
+/svn/sw/rms220/!svn/ver/267/trunk/sdtest/sdtest-0.3/Changelog
+END
+sdtest.c
+K 25
+svn:wc:ra_dav:version-url
+V 60
+/svn/sw/rms220/!svn/ver/267/trunk/sdtest/sdtest-0.3/sdtest.c
+END
+loads.h
+K 25
+svn:wc:ra_dav:version-url
+V 59
+/svn/sw/rms220/!svn/ver/267/trunk/sdtest/sdtest-0.3/loads.h
+END
+algos.h
+K 25
+svn:wc:ra_dav:version-url
+V 59
+/svn/sw/rms220/!svn/ver/267/trunk/sdtest/sdtest-0.3/algos.h
+END
+sdtest.h
+K 25
+svn:wc:ra_dav:version-url
+V 60
+/svn/sw/rms220/!svn/ver/267/trunk/sdtest/sdtest-0.3/sdtest.h
+END
+README
+K 25
+svn:wc:ra_dav:version-url
+V 58
+/svn/sw/rms220/!svn/ver/267/trunk/sdtest/sdtest-0.3/README
+END
+process.c
+K 25
+svn:wc:ra_dav:version-url
+V 61
+/svn/sw/rms220/!svn/ver/267/trunk/sdtest/sdtest-0.3/process.c
+END
+al_rws.c
+K 25
+svn:wc:ra_dav:version-url
+V 60
+/svn/sw/rms220/!svn/ver/267/trunk/sdtest/sdtest-0.3/al_rws.c
+END
+COPYING
+K 25
+svn:wc:ra_dav:version-url
+V 59
+/svn/sw/rms220/!svn/ver/267/trunk/sdtest/sdtest-0.3/COPYING
+END
+version.h
+K 25
+svn:wc:ra_dav:version-url
+V 61
+/svn/sw/rms220/!svn/ver/267/trunk/sdtest/sdtest-0.3/version.h
+END
+sdtest.8
+K 25
+svn:wc:ra_dav:version-url
+V 60
+/svn/sw/rms220/!svn/ver/267/trunk/sdtest/sdtest-0.3/sdtest.8
+END
+Makefile
+K 25
+svn:wc:ra_dav:version-url
+V 60
+/svn/sw/rms220/!svn/ver/267/trunk/sdtest/sdtest-0.3/Makefile
+END
+io_sd.c
+K 25
+svn:wc:ra_dav:version-url
+V 59
+/svn/sw/rms220/!svn/ver/267/trunk/sdtest/sdtest-0.3/io_sd.c
+END
+al_one.c
+K 25
+svn:wc:ra_dav:version-url
+V 60
+/svn/sw/rms220/!svn/ver/267/trunk/sdtest/sdtest-0.3/al_one.c
+END

@@ -1,0 +1,31 @@
+Scsi Disk Test for Linux
+
+2008-06-11 Version 0.3-pre3
+        made test pattern option.
+	modified the process.c, for the 'selfd' test should also be tested
+	once for every device out of the main loop.
+        modified to use 'off_t' instead of 'size_t' as type of disk size.
+	modified 'interf' test by using smaller buffer size to fit various
+	types of hard drives.
+	fixed a bug in process.c, test string should be preset for every
+	process during its intialization.
+
+2008-03-20 Version 0.2
+	added codes do 'diskstats' calculating.
+	redefined quiet mode option 'nopro', removed 'algo_srb'.
+	fixed a bug to get device size before part_test_device.
+	fixed a bug in doing checksum of interf buffer test, use only 512k
+	to test buffer write read although it is much less than the full
+	capacity of real device buffer.
+	refined the codes of 'sd_getbs' and 'sd_getsize' according to
+	different device types. rewrote the 'sd_get' accordingly so that 
+	the /dev/sg can also be supported.
+	modified the process.c, for the 'interf' test should only be tested
+	once for every device out of the main loop.
+	added 'bsget' and 'blkget' hooks in the sd device structure, and
+	accordingly moved io method dependent 'bsget' and 'blkget' functions 
+	out into their io modules.
+
+2008-03-03 Version 0.1
+	made initial version.
+

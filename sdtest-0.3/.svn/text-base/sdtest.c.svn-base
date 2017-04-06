@@ -1,0 +1,1065 @@
+/* sdtest.c
+ *
+ * Author: Xiang-Yu Wang <rain_wang@jabil.com>
+ *
+ * Copyright (c) 2008 Jabil, Inc.
+ *
+ * This code is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * 2008-01-17 made initial version
+ * 2008-02-22 accommodate the sd_err, with -1 as return value
+ * 2008-03-06 redefined quiet mode options 'nopro', removed 'algo_srb'
+ * 2008-03-13 refined the type handling in 'sd_getbs' and 'sd_getsize', and
+ *            the io type choosing in 'sd_get' accordingly so that the /dev/sgX
+ *            device can also be supported
+ * 2008-03-14 moved io method dependent 'bsget' and 'blkget' functions out into
+ *            the io modules
+ * 2008-03-17 fixed a bug in 'sd_getbs', 512 should be set before all 'bsget'
+ * 2008-04-14 made test 'pattern' option
+ *
+ */
+
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
+#include <unistd.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <signal.h>
+#include <ctype.h>
+#include <errno.h>
+#include <getopt.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/sysmacros.h>
+#include <sys/mman.h>
+#include <sys/time.h>
+#include <sys/ioctl.h>
+#include <pthread.h>
+#include <linux/major.h> 
+
+#include "sdtest.h"
+#include "algos.h"
+#include "utils.h"
+
+#ifndef O_DIRECT
+#define O_DIRECT	00040000
+#endif
+#ifndef O_CLOEXEC
+#define O_CLOEXEC	02000000
+#endif
+
+/*
+ * default parameters
+ */
+#define DEF_DEVICE	"null"
+#define DEF_TEST	"null"
+#define DEF_PASS	1
+#define DEF_THREAD	0
+#define DEF_BLOCK	0
+#define DEF_BLOCKS	BPT_BLOCKS
+#define DEF_SIZE	0
+#define DEF_START	0
+#define DEF_END		0 
+#define DEF_COVERAGE	100
+#define DEF_PATTERN	0x5a5a5a5a
+
+static struct test_parm test_parm = {
+	.device		= DEF_DEVICE,
+	.test		= DEF_TEST,
+	.pass		= DEF_PASS,
+	.thread		= DEF_THREAD,
+	.block		= DEF_BLOCK,
+	.blocks		= DEF_BLOCKS,
+	.size		= DEF_SIZE,
+	.start		= DEF_START,
+	.end		= DEF_END,
+	.cover		= DEF_COVERAGE,
+	.full		= 0,
+	.pattern	= DEF_PATTERN,
+	.backup		= 0,
+	.sgio		= 0,
+	.direct		= 0,
+	.nopro		= 0,
+};
+
+static int getinfo = 0;
+static int not_allow_test_size_larger_than_disk_size = 0;
+
+/* map sd_part to sd_device in threaded test */
+static const int map_part = 0;
+
+/* page align */
+static const int page_align = 0;
+
+/*
+ * supported disks 
+ */
+extern struct sd_device gen_disk;
+extern struct sd_device sd_disk;
+
+static struct sd_device *disks[] = { 
+	&gen_disk, 
+	&sd_disk, 
+	NULL 
+};
+
+/* 
+ * test algorithms 
+ */
+static struct test_algo *algos[] = { 
+	algo_rws, 
+	algo_one, 
+	algo_par, 
+	NULL 
+};
+
+/*
+ * core sdtest functions
+ */
+static int sd_filetype(const char *name)
+{
+	struct stat st;
+
+	if (stat(name, &st) < 0)
+               	return SD_ERR;
+
+	if (S_ISCHR(st.st_mode)) {
+       		if (RAW_MAJOR == major(st.st_rdev))
+               		return SD_RAW;
+                else if (SCSI_GENERIC_MAJOR == major(st.st_rdev))
+                	return SD_SCSI_SG;
+	} else if (S_ISBLK(st.st_mode)) {
+                if (SCSI_CDROM_MAJOR == major(st.st_rdev))
+               		return SD_SCSI_CD;
+               	return SD_BLOCK;
+	}
+
+	return SD_OTHER;
+}
+
+static int sd_getbs(struct sd_device *disk)
+{
+	/* 
+	 * for sg device we put the real get bs and size command 
+	 * issued in the following sd_getsize() instead.
+	 * here set bs 512 first.
+	 */
+	disk->bs = BASE_SEC_SIZE;
+	return disk->bsget(disk);
+}
+
+static int sd_getsize(struct sd_device *disk)
+{
+	/* bs must be set already */
+	if (!disk->bs) {
+		tperr("bs must be set!\n");
+		return SD_ERR;
+	}
+
+	switch (disk->type) {
+	case SD_RAW:
+	case SD_SCSI_SG:
+	case SD_SCSI_CD:
+		if (disk->blkget(disk) < 0) {
+			disk->stat = SD_ERR_SYS;
+			return SD_ERR;
+		}
+		sd_debug("sggetsize %lld\n", disk->blk);
+		break;
+	case SD_GENERIC:
+	case SD_BLOCK:
+	case SD_OTHER:
+	default:
+#ifdef GETSIZE64
+		return ioctl(disk->fd, BLKGETSIZE64, &disk->size);
+#else
+		if (disk->blkget(disk) < 0) {
+			disk->stat = SD_ERR_SYS;
+			return SD_ERR;
+		}
+		sd_debug("blkgetsize %lld\n", disk->blk);
+		break;
+#endif
+	}
+
+	disk->size = disk->blk * disk->bs;
+	return SD_ERR_NO;
+}
+
+static int sd_getinfo(struct sd_device *disk)
+{
+	/* print disk properties */
+	tpout("Device info: name: %s sector: %d blocks: %ld ", 
+			disk->name, disk->bs, disk->blk);
+	/* break the info into two, for 'tpout' problem */
+	tpout("size: %lld bytes\n", disk->size);
+	return SD_ERR_NO;
+}
+
+static struct sd_device *sd_get(const char *name, int sgio)
+{
+	struct sd_device *disk = NULL;
+	char *typename;
+	int sd_type;
+	int i;
+
+	/* which io method to use */
+        sd_type = sd_filetype(name);
+	switch (sd_type) {
+	case SD_GENERIC:
+	case SD_BLOCK:
+	case SD_SCSI_CD:
+		typename = GENERIC_DISK;
+		if (sgio)
+			typename = SCSI_DISK;
+		break;
+	case SD_RAW:
+	case SD_SCSI_SG:
+		typename = SCSI_DISK;
+		break;
+	case SD_OTHER:
+		typename = GENERIC_DISK;
+		break;
+	default:
+		/* error */
+		return NULL;
+	}
+	sd_debug("io type %s\n", typename);
+
+	for (i = 0; disks[i]; i++) {
+		if (!strcmp(typename, disks[i]->name)) {
+			disk = disks[i];
+			break;
+		}
+	}
+	disk->type = sd_type;
+	sd_debug("disk type %d\n", disk->type);
+
+	return disk;
+}
+
+static void sd_set(struct sd_device *disk)
+{
+	/* preset device properties */
+	disk->bs	= 0;
+	disk->blk	= 0;
+	disk->size	= 0;
+
+	disk->fd	= -1;
+	disk->pos	= 0;
+
+	disk->buf	= NULL;
+
+	disk->stat	= SD_ERR_NO;
+}
+
+static void test_set(struct sd_device *disk)
+{
+	struct test_algo *algo = algos[0];
+	int i, j;
+
+	/* preset test algorithms */
+	for (i = 0; disk->tests[i].name; i++) {
+		disk->tests[i].stat = SD_ERR_NO;
+		
+		/* has been set */
+		if (disk->tests[i].func != NULL)
+			continue;
+
+		/* for threaded test */
+		if (disk->parm->thread) {
+			if (map_part)
+				algo = algo_one;
+			else
+				algo = algo_par;
+		} else
+			algo = algo_one; /* only this one now */
+
+		for (j = 0; algo[j].name; j++) {
+			if (!strcmp(disk->tests[i].name, algo[j].name)) 
+				disk->tests[i].func = algo[j].func;
+		}
+	}
+}
+
+static struct sd_test *test_get(struct sd_device *disk, const char *name)
+{
+	struct sd_test *test = NULL;
+	int i;
+
+	for (i = 0; disk->tests[i].name; i++) {
+		if (!strcmp(disk->tests[i].name, name) 
+				&& disk->tests[i].func) {
+			test = &disk->tests[i];
+			break;
+		}
+	}
+
+	return test;
+}
+
+static int do_test(struct sd_device *disk, struct test_parm *p)
+{
+	struct sd_test *test;
+	int i, psz; 
+	char *wbuf = NULL;
+
+	test = test_get(disk, p->test);
+	if (!test) {
+		tperr("%s: Test empty or not supported\n", p->test);
+		return SD_ERR_SYS;
+	}
+
+        psz = getpagesize();
+        if (page_align || disk->type == SD_RAW) {
+               	wbuf = (char *)malloc(p->block * p->blocks + psz);
+               	if (!wbuf) {
+                       	tperr("not enough user memory for aligned storage\n");
+                       	return SD_ERR_SYS;
+               	}
+               	disk->buf = (char *)(((unsigned long)wbuf + psz - 1) & (~(psz - 1)));
+        } else {
+               	wbuf = (char *)malloc(p->block * p->blocks);
+               	if (!wbuf) {
+                       	tperr("not enough user memory\n");
+                       	return SD_ERR_SYS;
+               	}
+               	disk->buf = wbuf;
+        }
+
+	for (i = 1; i <= p->pass; i++) {
+		tpout("%2d:", i);
+		if ((test->stat = test->func(p, disk)) < 0)
+			break;
+		tpout("\b\b\b");
+	}
+
+	free(disk->buf);
+
+	return test->stat;
+}
+
+static struct sd_device *init_test(struct test_parm *p)
+{
+	struct sd_device *disk;
+	int flags;
+
+	disk = sd_get(p->device, p->sgio);
+	if (!disk) {
+		tperr("%s: Device empty or not exist\n", p->device);
+		return NULL;
+	}
+
+	sd_set(disk);
+
+	disk->name = (const char *)strrchr(p->device, '/');
+	disk->name = disk->name + 1;
+
+	/* 
+	 * keep a parameter structure for io modules' use 
+	 * note: the values of parameters can be changed during
+	 * the following init process
+	 */
+	disk->parm = p;
+
+	test_set(disk);
+
+        flags = O_RDWR;
+	if (strstr(disk->name, CDROM_DISK) || strstr(disk->name, DVDROM_DISK)
+			|| strstr(p->test, "read"))
+		flags = O_RDONLY;
+        if (p->direct)
+		/* since Linux 2.6.10 */
+              	flags |= O_DIRECT;
+	if (p->thread)
+		/* since Linux 2.6.23 */
+		flags |= O_CLOEXEC;
+        if ((disk->fd = open(p->device, flags)) < 0) {
+		tperr("%s: open failed\n", p->device);
+                return NULL;
+        }
+
+	if (sd_getbs(disk) < 0){
+		tperr("%s: can't get block size\n", p->device);
+		return NULL;
+	}
+	sd_debug("block size %d\n", disk->bs);
+
+	if (sd_getsize(disk) < 0){
+		tperr("%s: can't get disk size\n", p->device);
+		return NULL;
+	}
+	sd_debug("disk size %lld\n", disk->size);
+	
+	/* use this block size */
+	if (!p->block) {
+		if (BASE_SEC_SIZE > disk->bs)
+			p->block = disk->bs;
+		else
+			p->block = BASE_SEC_SIZE;
+	} else if (p->block > MAX_BLK_SIZE)
+		p->block = disk->bs;
+
+	/* use this blocks size */
+	if (p->blocks > MAX_BPT_SIZE / BASE_SEC_SIZE)
+		p->blocks = BPT_BLOCKS;
+	
+	/* check first */
+	if (p->start >= disk->size)
+		goto parerr;
+
+	/* 
+         * these parameter combinations make sense:
+         * -s size                 -c coverage
+         * -s size -f start        -c coverage
+         * -s size          -o end -c coverage
+         * -s size -f start -o end -c coverage
+         *         -f start        -c coverage
+         *                  -o end -c coverage
+         *         -f start -o end -c coverage
+         *                         -c coverage 
+         */
+	if ((p->size == disk->size) || (p->full)
+			|| ((p->start == 0) && (p->end == disk->size))) {
+		p->size	 = disk->size;
+		p->start = 0;
+		p->end   = disk->size;
+		p->cover = 100;
+	} else if ((p->end != DEF_END) && (p->size == DEF_SIZE)) {
+		/* along only single direction */
+		if ((p->end - p->start) < 0) {
+			int t = p->start - p->end;
+			p->start = p->end;
+			p->end = p->start + t;
+		}
+		p->size = p->end - p->start;
+	} else if ((p->end != DEF_END) && (p->size != DEF_SIZE)) {
+		p->start = p->end - p->size;
+		if (p->start < 0) {
+			p->size = p->end;
+			p->start = 0;
+		}
+	} else {
+		if (p->end == DEF_END)
+			p->end = disk->size;
+		/* will test the whole disk by default! */
+		if (p->size == DEF_SIZE) 
+			p->size = p->end - p->start;
+		if (not_allow_test_size_larger_than_disk_size)
+			if (p->size > (p->end - p->start))
+				p->size = p->end - p->start;
+		sd_debug("p->size %lld\n", p->size);
+	}
+
+	/* make size quanta */
+	if (p->size < (p->block * p->blocks)) {
+		if (p->size < p->block) {
+			p->size = p->block;
+			p->blocks = 1;
+		} else {
+			p->blocks = (p->size / p->block) + ((p->size % p->block) ? 1 : 0);
+			p->size = p->block * p->blocks;
+		}
+	}
+	sd_debug("p->block %d p->blocks %d\n", p->block, p->blocks);
+
+	/* align the start position */
+	/* p->start &= ~0x1ff; for 512-byte block */
+	p->start = p->start / p->block * p->block;
+	sd_debug("p->start %lld\n", p->start);
+
+	/* check again */
+	if (p->size < 0)
+		goto parerr;
+	if (p->size == 0) {
+		disk->stat = SD_ERR_NO;
+		goto parerr;
+	}
+	sd_debug("test size %lld\n", p->size * p->cover / 100);
+
+	return disk;
+parerr:
+	tperr("test init failed, check your parameters\n");
+	return NULL;
+}
+
+static void exit_test(struct sd_device *disk)
+{
+	close(disk->fd);
+}
+
+static void sd_setpart(struct sd_part *part)
+{
+	/* absolute offset pointer of the device */
+	part->pos  = part->start;
+
+	/* set null before do test */
+	part->buf  = NULL;
+	part->test = NULL;
+}
+
+static struct sd_part *sd_getpart(struct sd_thread *thread, int idx)
+{
+	struct sd_device *disk = thread->dev;
+	struct sd_part *part = NULL;
+
+	part = (struct sd_part *)malloc(sizeof(struct sd_part));
+	if (!part)
+		return NULL;
+	
+	part->name = (char *)disk->name;
+	part->ind  = idx;
+
+	/* 
+         * the key fields are these two in partition:
+         * we divide the whole disk space into pieces by threads and 
+         * each will have the equal size on which test will be
+         * performed
+         */
+	part->size  = disk->size / disk->parm->thread;
+	part->start = 0 + (part->size * idx);
+	sd_debug("part->size %lld part->start %lld\n", part->size, part->start);
+
+	part->sd = disk;
+	
+	/* 
+         * keep the test parameter structure per thread which
+         * will be updated during the following init process
+        */
+	part->parm = &thread->parm;
+
+	return part;
+}
+
+static void sd_putpart(struct sd_part *part)
+{
+	if (part->buf)
+		free(part->buf);
+	free(part);
+}
+
+static void *ptest(void *parm)
+{	
+	struct sd_thread *thrd = parm;
+	struct sd_test *test;
+	int i, psz; 
+	char *wbuf = NULL;
+
+	thrd->pid = getpid();
+	
+	test = test_get(thrd->dev, thrd->parm.test);
+	if (!test) {
+		tperr("%s: Test empty or not supported\n", thrd->parm.test);
+		return (void *)SD_ERR_SYS;
+	}
+
+        psz = getpagesize();
+        if (page_align || thrd->dev->type == SD_RAW) {
+               	wbuf = (char *)malloc(thrd->parm.block * thrd->parm.blocks + psz);
+               	if (!wbuf) {
+                       	tperr("not enough user memory for aligned storage\n");
+                       	return (void *)SD_ERR_SYS;
+               	}
+               	thrd->part->buf = (char *)(((unsigned long)wbuf + psz - 1) & (~(psz - 1)));
+        } else {
+               	wbuf = (char *)malloc(thrd->parm.block * thrd->parm.blocks);
+               	if (!wbuf) {
+                       	tperr("not enough user memory\n");
+                       	return (void *)SD_ERR_SYS;
+               	}
+               	thrd->part->buf = wbuf;
+        }
+
+	//pthread_mutex_lock(thrd->lock);
+	for (i = 1; i <= thrd->parm.pass; i++) {
+		tpout("%2d:", i);
+		if ((test->stat = test->func(thrd->part->parm, thrd->part)) < 0)
+			break;
+		tpout("\b\b\b");
+	}
+	//pthread_mutex_unlock(thrd->lock);
+
+	free(thrd->part->buf);
+	thrd->part->buf = NULL;
+
+	thrd->res = test->stat;
+	return (void *)test->stat;
+	/* pthread_exit(&test->stat); */
+}
+
+static int init_thread(struct sd_part *part, struct sd_thread *thread)
+{
+	/* 
+         * map a private copy of sd_device then replace the 
+         * parent to pass to the test or just make test
+         * supporting sd_part structure ?
+         */
+	if (map_part) {
+		struct sd_device *dsk = malloc(sizeof(struct sd_device));
+		if (!dsk)
+			return SD_ERR_SYS;
+		memcpy(dsk, thread->dev, sizeof(struct sd_device));
+		dsk->name = part->name;
+		dsk->size = part->size;
+		dsk->pos  = part->pos;
+		dsk->buf  = part->buf;
+		dsk->parm = part->parm;
+		/* replace the parent device with this in thread */
+		thread->dev = dsk;
+	}
+
+	/* 
+         * update the private parameter structure with partition
+         * we divide the whole test space into pieces by threads and 
+         * each will have the equal size on which test will be
+         * performed (drop the remainder or not?)
+         */
+	thread->parm.size  = thread->parm.size / thread->parm.thread;
+	thread->parm.start = thread->parm.start + (thread->parm.size * thread->ind);
+	thread->parm.end   = thread->parm.start + thread->parm.size; /*ignored*/
+	sd_debug("parm.size %lld parm.start %lld\n", 
+			thread->parm.size, thread->parm.start);
+
+	return SD_ERR_NO;
+}
+
+static void exit_thread(struct sd_thread *thread)
+{
+	/* 
+         * map a private copy of sd_device then replace the 
+         * parent to pass to the test or just make test
+         * supporting sd_part structure ?
+         */
+	if (map_part) {
+		if (thread->dev)
+			free(thread->dev);
+	}
+}
+
+static void sd_sighandler(int sig)
+{
+	tperr("test interrupted (%s)\n", strsignal(sig));
+	/* kill(getpid(), sig); */
+	exit(SD_ERR_USR);
+}
+
+static int parse(const char *name, int *argc, char ***argv, struct test_parm *p)
+{
+	struct option opts[] = {
+		{ "device",	1, 0, 'd' },
+		{ "test",	1, 0, 't' },
+		{ "pass",	1, 0, 'p' },
+		{ "thread",	1, 0, 'r' },
+		{ "block",	1, 0, 'b' },
+		{ "blocks",	1, 0, 'g' },
+		{ "size",	1, 0, 's' },
+		{ "start",	1, 0, 'f' },
+		{ "end",	1, 0, 'o' },
+		{ "coverage",	1, 0, 'c' },
+		{ "pattern",	1, 0, 'w' },
+		{ "backup",	0, 0, 'k' },
+		{ "sgio",	0, 0, 'u' },
+		{ "direct",	0, 0, 'n' },
+		{ "quiet",	1, 0, 'q' },
+		{ "info",	0, 0, 'i' },
+		{ "version",	0, 0, 'v' },
+		{ "help",	0, 0, 'h' },
+		{ NULL,	0, 0, 0 },
+	};
+	const char *opts_help[] = {
+		"(D)evice to test, e.g. /dev/sda /dev/hda.",
+		"(T)est to test, e.g. swrc rwrc sread rread.",
+		"(P)asses to repeat the test, value range 0-n.",
+		"(R)un a number of threads concurrently in test.",
+		"(B)yte size of every block, e.g. 512 for physical device.",
+		"(G)roup of blocks of every transfer, e.g. 64 128 1024 1k.",
+		"(S)ize in byte or block of the test, e.g. n nK nM or full.",
+		"(F)rom which byte or block offset to test, e.g. n nK nM nG.",
+		"(O)n which byte or block offset to end, e.g. n nK nM nG.",
+		"(C)overage of whole disk in test, value range 0-100.",
+		"(W)rite pattern on writing test, e.g. 0x5a5a5a5a.",
+		"(K)eep in backup test mode for preserving data.",
+		"(U)se sgio interface to access device.",
+		"(N)on asynchronous direct I/O method.",
+		"(Q)uiet run without percentage or stats.",
+		"(I)nformation of the device.",
+		"(V)ersion information.",
+		"(H)elp message.",
+	};
+	struct option *opt;
+	const char **hlp;
+	int max, sz;
+
+	for (;;) {
+		int i;
+		i = getopt_long(*argc, *argv, "d:t:p:r:b:g:s:f:o:c:w:kunq:ivh", opts, NULL);
+		if (i == -1) {
+			break;
+		}
+		switch (i) {
+		case 'd':
+			p->device = optarg;
+			break;
+		case 't':
+			p->test = optarg;
+			break;
+		case 'p':
+			p->pass = atoi(optarg);
+			if (p->pass < 0) {
+				tperr("pass: bad value\n");
+				exit(SD_ERR_USR);
+			}
+			break;
+		case 'r':
+			p->thread = atoi(optarg);
+			if (p->thread < 0 || p->thread > NUM_THREADS) {
+				tperr("thread: bad value\n");
+				exit(SD_ERR_USR);
+			}
+			break;
+		case 'b':
+		{
+			int res, num;
+			char c;
+
+			res = sscanf(optarg, "%d%c", &num, &c);
+			if (res == 0) {
+				tperr("block: bad value\n");
+				exit(SD_ERR_USR);
+			} else if (res == 1) {
+				p->block = num;
+			} else {
+				switch (c) {
+				case 'c':
+				case 'C':
+					p->block = num;
+					break;
+				case 'b':
+				case 'B':
+					p->block = num * BASE_SEC_SIZE;
+					break;
+				case 'k':
+					p->block = num * 1024;
+					break;
+				case 'K':
+					p->block = num * 1000;
+					break;
+				default:
+					tperr("block: bad value\n");
+					exit(SD_ERR_USR);
+				}
+			}
+			sd_debug("block %d\n", p->block);
+			
+			/* block size can't be zero */
+			if (p->block <= 0) {
+				tperr("block: bad value\n");
+				exit(SD_ERR_USR);
+			}
+			break;
+		}
+		case 'g':
+		{
+			int res, num;
+			char c;
+
+			res = sscanf(optarg, "%d%c", &num, &c);
+			if (res == 0) {
+				tperr("blocks: bad value\n");
+				exit(SD_ERR_USR);
+			} else if (res == 1) {
+				p->blocks = num;
+			} else {
+				switch (c) {
+				case 'c':
+				case 'C':
+					p->blocks = num;
+					break;
+				case 'b':
+				case 'B':
+					p->blocks = num * BASE_SEC_SIZE;
+					break;
+				case 'k':
+					p->blocks = num * 1024;
+					break;
+				case 'K':
+					p->blocks = num * 1000;
+					break;
+				case 'm':
+					p->blocks = num * 1024 * 1024;
+					break;
+				case 'M':
+					p->blocks = num * 1000000;
+					break;
+				default:
+					tperr("blocks: bad value\n");
+					exit(SD_ERR_USR);
+				}
+			}
+			sd_debug("blocks %d\n", p->blocks);
+
+			/* blocks number can't be zero */
+			if (p->blocks <= 0) {
+				tperr("blocks: bad value\n");
+				exit(SD_ERR_USR);
+			}
+			break;
+		}
+		case 's':
+			if (strstr(optarg, "full")) {
+				p->full = 1;
+				break;
+			}
+
+			p->size = sd_bytebox(optarg, p->block);
+			sd_debug("size %lld\n", p->size);
+
+			if (p->size < 0) {
+				tperr("size: bad value\n");
+				exit(SD_ERR_USR);
+			}
+			break;
+		case 'f':
+			p->start = (off_t)sd_bytebox(optarg, p->block);
+			sd_debug("start %lld\n", p->start);
+
+			if (p->start < 0) {
+				tperr("start: bad value\n");
+				exit(SD_ERR_USR);
+			}
+			break;
+		case 'o':
+			p->end = (off_t)sd_bytebox(optarg, p->block);
+			sd_debug("end %lld\n", p->end);
+
+			if (p->end < 0) {
+				tperr("end: bad value\n");
+				exit(SD_ERR_USR);
+			}
+			break;
+		case 'c':
+			p->cover = atoi(optarg);
+			if (p->cover < 0 || p->cover > 100) {
+				tperr("coverage: bad value\n");
+				exit(SD_ERR_USR);
+			}
+			sd_debug("coverage %d\n", p->cover);
+			break;
+		case 'w':
+			p->pattern = strtoul(optarg, NULL, 16);
+			if (p->pattern < 0) {
+				tperr("pattern: bad value\n");
+				exit(SD_ERR_USR);
+			}
+			sd_debug("pattern 0x%x\n", p->pattern);
+			break;
+		case 'k':
+			p->backup = 1;
+			break;
+		case 'u':
+			p->sgio = 1;
+			break;
+		case 'n':
+			p->direct = 1;
+			break;
+		case 'q':
+			p->nopro = atoi(optarg);
+			if (p->nopro < 0 || p->nopro > 2) {
+				tperr("quite: bad value\n");
+				exit(SD_ERR_USR);
+			}
+			break;
+		case 'i':
+			getinfo = 1;
+			break;
+		case 'v':
+			tpout(""VER_STR"\n");
+			exit(SD_ERR_NO);
+		case 'h':
+		default:
+			tpout(""VER_STR"\n\n");
+			tpout("Usage: %s [arguments]\n\n", name);
+			tpout("Arguments:\n");
+			max = 0;
+			for (opt = opts; opt->name; opt++) {
+				sz = strlen(opt->name);
+				if (sz > max)
+					max = sz;
+			}
+			for (opt = opts, hlp = opts_help; opt->name; 
+					opt++, hlp++) {
+				tpout("  -%c, --%s", opt->val, opt->name);
+				sz = strlen(opt->name);
+				for (; sz < max; sz++)
+					tpout(" ");
+				tpout("  %s\n", *hlp);
+			}
+			exit(SD_ERR_NO);
+		}
+	}
+
+	*argc -= optind;
+	*argv += optind;
+
+	return 0;
+}
+
+int main(int argc, char **argv)
+{
+	const char *progname;
+	struct test_parm *parm = &test_parm;
+	struct sd_device *disk;
+	struct sd_thread *thrd;
+	pthread_mutex_t lock;
+	pthread_attr_t attr;
+	int i, ret = SD_ERR_NO;
+
+	progname = (const char *)strrchr(argv[0], '/');
+	progname = progname ? (progname + 1) : argv[0];
+
+	parse(progname, &argc, &argv, parm);
+	
+	if (geteuid() != 0) {
+		tperr("%s: must be run as root\n", progname);
+		exit(SD_ERR_USR);
+	}
+
+        signal(SIGINT, sd_sighandler);
+        signal(SIGQUIT, sd_sighandler);
+        signal(SIGPIPE, sd_sighandler);
+        signal(SIGTERM, sd_sighandler);
+
+	if (!(disk = init_test(parm))) {
+		tperr("init test failed\n");
+		exit(SD_ERR_SYS);
+	}
+
+	if (getinfo) {
+		sd_getinfo(disk);
+		exit(SD_ERR_NO);
+	}
+
+	tptout("%s: %s: %s: ...", progname, parm->device, parm->test);
+	if (parm->thread) {
+		pthread_mutex_init(&lock, NULL);
+		pthread_attr_init(&attr);
+		pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
+
+		thrd = calloc(parm->thread, sizeof(struct sd_thread));
+		if (!thrd) {
+                       	tperr("not enough memory for threads\n");
+			ret = SD_ERR_SYS;
+			goto quit_thrd;
+		}
+		memset(thrd, 0, sizeof(*thrd));
+
+		/* for every thread */
+		for (i = 0; i < parm->thread; i++) {
+			thrd[i].lock = &lock;
+			thrd[i].attr = &attr;
+			
+			thrd[i].ind  = i;
+
+			thrd[i].res  = SD_ERR_NO;
+			thrd[i].test = parm->test;
+
+			/* 
+			 * this device structure may be replaced by a mapped
+			 * one of test partition if needed
+			 */
+			thrd[i].dev  = disk;
+
+			thrd[i].part = sd_getpart(&thrd[i], i);
+			if (!thrd[i].part) {
+				tperr("get test partition of %d failed\n", i);
+				ret = SD_ERR_SYS;
+				goto quit_thrd;
+			}
+			
+			/* get a copy of parameter for private use */
+			memcpy(&thrd[i].parm, parm, sizeof(struct test_parm));
+
+			sd_setpart(thrd[i].part);
+
+			if (init_thread(thrd[i].part, &thrd[i])) {
+				tperr("init test thread %d failed\n", i);
+				ret = SD_ERR_SYS;
+				goto quit_thrd;
+			}
+
+			//tptout("%2d ", i);
+			if (pthread_create(&thrd[i].self, NULL, ptest, &thrd[i])) {
+				tperr("pthread create: %s\n", strerror(errno));
+				ret = SD_ERR_SYS;
+				goto quit_thrd;
+			}
+			//tptout("\b\b\b");
+		}
+		
+		usleep(1000);
+
+		for (i = 0; i < parm->thread; i++) {
+			//tptout("%2d ", i);
+			if (pthread_join(thrd[i].self, (void *)&thrd[i].res)) {
+				tperr("pthread join: %s\n", strerror(errno));
+				ret = SD_ERR_SYS;
+				goto quit_thrd;
+			}
+			//tptout("\b\b\b");
+			
+			/* 
+			 * ensure the device stat updated 
+			 * if partition was mapped into device, then the
+			 * stat should be set back to its parent device
+			 */
+			if (map_part)
+				disk->stat = thrd[i].dev->stat;
+			//disk->stat = thrd[i].dev->stat;
+
+			if (thrd[i].res != SD_ERR_NO) {
+				if (disk->stat != SD_ERR_NO) {
+					tpout(" FAILED\n");
+					ret = disk->stat;
+					goto quit_thrd;
+				} else {
+					tpout(" failed\n");
+					ret = SD_ERR_SYS;
+					goto quit_thrd;
+				}
+			}
+			tpout(" PASSED");
+
+			exit_thread(&thrd[i]);
+
+			sd_putpart(thrd[i].part);
+		}
+		tpout("\n");
+quit_thrd:
+		if (thrd)
+			free(thrd);
+
+		pthread_attr_destroy(&attr);
+		pthread_mutex_destroy(&lock);
+	} else {
+		if ((do_test(disk, parm)) != SD_ERR_NO) {;
+			if (disk->stat != SD_ERR_NO) {
+				tpout(" FAILED\n");
+				exit(disk->stat);
+			} else {
+				tpout(" failed\n");
+				exit(SD_ERR_SYS);
+			}
+		}
+		tpout(" %d PASSED\n", parm->pass);
+	}
+
+	exit_test(disk);
+
+	exit(ret);
+}
