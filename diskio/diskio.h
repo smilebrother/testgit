@@ -18,7 +18,4 @@ typedef enum {
 	WRITE_READ_OP,
 } TEST_MODE;
 
-define MY_TEST 1
-define YOU_TEST 2
-
 #endif
