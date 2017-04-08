@@ -755,7 +755,7 @@ int main(int argc, char **argv)
     int64_t lba = 0;
     int duration = -1;
     
-
+	printf("WensonTest====>\n");
     if (argc < 3) {
         usage();
         return 1;
