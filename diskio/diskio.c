@@ -759,6 +759,7 @@ int main(int argc, char **argv)
         usage();
         return 1;
     }
+	printf("Add a one line here\n");
 
 	printf("This is a test point\n");
 
