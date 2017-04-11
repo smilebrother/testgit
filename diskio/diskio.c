@@ -760,6 +760,11 @@ int main(int argc, char **argv)
         return 1;
     }
 
+	printf("GitTest1\n");
+	printf("GitTest1\n");
+	printf("GitTest1\n");
+	printf("GitTest1\n");
+
     strncpy(dev_path, argv[1], sizeof(dev_path));
 
     if (!strcmp(argv[2], "r")) {
