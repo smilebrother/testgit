@@ -760,6 +760,8 @@ int main(int argc, char **argv)
         return 1;
     }
 
+	printf("This is a test point\n");
+
     strncpy(dev_path, argv[1], sizeof(dev_path));
 
     if (!strcmp(argv[2], "r")) {
