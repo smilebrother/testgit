@@ -759,6 +759,7 @@ int main(int argc, char **argv)
         usage();
         return 1;
     }
+	printf("Add a one line here\n");
 
     strncpy(dev_path, argv[1], sizeof(dev_path));
 
