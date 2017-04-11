@@ -759,6 +759,11 @@ int main(int argc, char **argv)
         usage();
         return 1;
     }
+	
+	pritnf("GitTest2\n");
+	pritnf("GitTest2\n");
+	pritnf("GitTest2\n");
+	pritnf("GitTest2\n");
 
 	printf("GitTest1\n");
 	printf("GitTest1\n");
