@@ -25,3 +25,7 @@ Arguments:
 Process of Scsi Disk Test
 
 usage: process [-d device] [-t test] [-r thread] [-s] [-p] [-o optstring]
+usage: process [-d device] [-t test] [-r thread] [-s] [-p] [-o optstring]
+usage: process [-d device] [-t test] [-r thread] [-s] [-p] [-o optstring]
+usage: process [-d device] [-t test] [-r thread] [-s] [-p] [-o optstring]
+usage: process [-d device] [-t test] [-r thread] [-s] [-p] [-o optstring]
