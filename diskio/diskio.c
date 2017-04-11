@@ -759,7 +759,6 @@ int main(int argc, char **argv)
         usage();
         return 1;
     }
-	printf("GitTest2=============\n");
 
     strncpy(dev_path, argv[1], sizeof(dev_path));
 
