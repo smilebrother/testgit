@@ -761,6 +761,8 @@ int main(int argc, char **argv)
     }
 
 	printf("This is a test point\n");
+	printf("This is a test point\n");
+	printf("This is a test point\n");
 	
 
     strncpy(dev_path, argv[1], sizeof(dev_path));
