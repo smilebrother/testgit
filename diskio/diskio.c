@@ -760,6 +760,11 @@ int main(int argc, char **argv)
         return 1;
     }
 
+	printf("WesnoTestPoint===>01");
+	printf("WesnoTestPoint===>02");
+	printf("WesnoTestPoint===>03");
+	printf("WesnoTestPoint===>04");
+
 	
 
     strncpy(dev_path, argv[1], sizeof(dev_path));
